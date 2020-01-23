@@ -467,24 +467,6 @@ void fillPatch(Mat &img, vector<vector<node> > &nodeTable, vector<patch> &patchL
 	}
 }
 
-#define RR 1
-void drawPoint(Mat &img, int x, int y) {
-	for(int i = x - RR; i < x + RR; i++) {
-		for(int j = y - RR; j < y + RR; j++) {
-			img.at<Vec3f>(j, i) = Vec3f(0.0f, 0.0f, 0.0f);
-		}
-	}
-}
-
-void drawRect(Mat &img, patch &p) {
-	for(int i =  p.y; i < p.y + p.height; i++) {
-		for(int j = p.x; j < p.x + p.width; j++) {
-			if((i == p.y) || (i == p.y + p.height - 1) || (j == p.x) || (j == p.x + p.width - 1))
-				drawPoint(img, j, i);
-		}
-	}
-}
-
 /*
  * usage: ./inpainting sourceImage x y w h destinationImage iterationTime
  * 
@@ -535,7 +517,6 @@ int main(int argc, char **argv) {
 	}
 	selectPatch(nodeTable);
 	fillPatch(img, nodeTable, patchList);
-//	drawRect(img, missing);
 
 	// write the filled image to the destination image
 	imwrite(output, img);
