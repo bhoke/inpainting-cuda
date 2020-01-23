@@ -3,8 +3,10 @@
 #include <vector>
 #include <cmath>
 //#include <unistd.h>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
+#include "Patch.h"
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 
 using namespace std;
@@ -54,6 +56,15 @@ patch roundUpArea(patch p) {
 	res.width = (p.x + p.width + NODE_WIDTH - 1) / NODE_WIDTH * NODE_WIDTH - res.x;
 	res.height = (p.y + p.height + NODE_WIDTH - 1) / NODE_HEIGHT * NODE_HEIGHT - res.y;
 	return res;
+}
+
+
+void drawMask(int event, int x, int y, int flags, void* param) {
+		if (flags == EVENT_FLAG_LBUTTON)
+		{
+			Mat &img = *((Mat*)(param)); // 1st cast it back, then deref
+			circle(img, Point(x, y), 7, Scalar::all(0), FILLED);
+		}
 }
 
 /*
@@ -458,46 +469,55 @@ void fillPatch(Mat &img, vector<vector<node> > &nodeTable, vector<patch> &patchL
  *	iterationTime -> the times for iteration
  */
 int main(int argc, char **argv) {
-	if (argc != 8) {
-		cout << "Usage: " << argv[0] << " input x y w h output iter_time" << endl;
+	if (argc != 4) {
+		cout << "Usage: " << argv[0] << " input output iter_time" << endl;
 		return 0;
 	}
 	char *input = argv[1],
-		*output = argv[6];
-	int maskX = atoi(argv[2]),
-		maskY = atoi(argv[3]),
-		maskW = atoi(argv[4]),
-		maskH = atoi(argv[5]),
-		iterTime = atoi(argv[7]);
+		*output = argv[2];
+	int iterTime = atoi(argv[3]);
 	Mat img;
 	img = imread(input, IMREAD_COLOR);
 	img.convertTo(img, CV_32FC3);
 
 	if (!img.data) {
-		cout << "Load Image failed" << endl;
+		cout << "Error reading image" << endl;
 		return 0;
 	}
-	cout << "W=" << img.cols << endl;
-	cout << "H=" << img.rows << endl;
-
-	patch missing = roundUpArea(patch(maskX, maskY, maskW, maskH));
-	cout << "x=" << missing.x << " y=" << missing.y << " width=" << missing.width << " height=" << missing.height << endl;
-	vector<patch> patchList = genPatches(img, missing);
-	cout << "Patch Size: " << patchList.size() << endl;
-	vector<vector<vector<float> > > ssdTable = calculateSSDTable(img, patchList);
-
-	vector<vector<node> > nodeTable;
-	initNodeTable(img, nodeTable, missing, patchList);
-
-	//fillPatch(img, nodeTable);
-	for (int i = 0; i < iterTime; i++) {
-		propagateMsg(nodeTable, ssdTable);
-		cout << "ITERATION " << i << endl;
+	cout << "Image Size is: W= " << img.cols << " H = " << img.rows << endl;
+	namedWindow("Draw Mask", WINDOW_FREERATIO);
+	Mat mask = 255 * Mat::ones(img.size(), CV_8UC1);
+	setMouseCallback("Draw Mask", drawMask,(void*) &mask);
+	//waitKey(0);
+	int key;
+	while (1)
+	{
+		imshow("Draw Mask", mask);
+		key = waitKey(10);
+		if (key == 'q') {
+			printf("Pressed q \n");
+			break;
+		}
 	}
-	selectPatch(nodeTable);
-	fillPatch(img, nodeTable, patchList);
 
-	// write the filled image to the destination image
-	imwrite(output, img);
+	//patch missing = roundUpArea(patch(maskX, maskY, maskW, maskH));
+	//cout << "x=" << missing.x << " y=" << missing.y << " width=" << missing.width << " height=" << missing.height << endl;
+	//vector<patch> patchList = genPatches(img, missing);
+	//cout << "Patch Size: " << patchList.size() << endl;
+	//vector<vector<vector<float> > > ssdTable = calculateSSDTable(img, patchList);
+
+	//vector<vector<node> > nodeTable;
+	//initNodeTable(img, nodeTable, missing, patchList);
+
+	////fillPatch(img, nodeTable);
+	//for (int i = 0; i < iterTime; i++) {
+	//	propagateMsg(nodeTable, ssdTable);
+	//	cout << "ITERATION " << i << endl;
+	//}
+	//selectPatch(nodeTable);
+	//fillPatch(img, nodeTable, patchList);
+
+	//// write the filled image to the destination image
+	//imwrite(output, img);
 	return 0;
 }
