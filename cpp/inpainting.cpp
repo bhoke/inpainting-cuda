@@ -8,19 +8,11 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
-
 using namespace std;
 using namespace cv;
 
-#define RADIUS	(16)
-
 // how large neighborhood region should we extract the patches
-#define RANGE_RATIO	(2.0f)
-
-const int PATCH_WIDTH = RADIUS;
-const int PATCH_HEIGHT = RADIUS;
-const int NODE_WIDTH = PATCH_WIDTH / 2;
-const int NODE_HEIGHT = PATCH_HEIGHT / 2;
+const float RANGE_THRESH = 2.0f;
 
 // used to initialize the message which will be passed in the iteration
 const float FULL_MSG = PATCH_HEIGHT * PATCH_WIDTH * 255 * 255 * 3 / 2;
@@ -62,8 +54,8 @@ patch roundUpArea(patch p) {
 void drawMask(int event, int x, int y, int flags, void* param) {
 		if (flags == EVENT_FLAG_LBUTTON)
 		{
-			Mat &img = *((Mat*)(param)); // 1st cast it back, then deref
-			circle(img, Point(x, y), 7, Scalar::all(0), FILLED);
+			Mat &img = *((Mat*)(param));
+			circle(img, Point(x, y), 7, Scalar::all(255), FILLED);
 		}
 }
 
@@ -88,16 +80,14 @@ vector<patch> genPatches(Mat &img, patch p) {
 	int hh = img.rows / NODE_HEIGHT,
 		ww = img.cols / NODE_WIDTH;
 	// the middle point of the target region
-	float midX = p.x + p.width / 2,
+	int midX = p.x + p.width / 2,
 		midY = p.y + p.height / 2;
-	for (int i = 1; i <= hh; i++) {
-		for (int j = 1; j <= ww; j++) {
-			int cX, cY;
-			float fcx = j * NODE_WIDTH, fcy = i * NODE_HEIGHT;
-			cY = i * NODE_HEIGHT - NODE_HEIGHT;
-			cX = j * NODE_WIDTH - NODE_WIDTH;
-			// skip the too far away patches
-			if (!(fabsf(fcx - midX) * 2 / p.width < RANGE_RATIO && fabsf(fcy - midY) * 2 / p.height < RANGE_RATIO))
+	for (int i = 0; i < hh; i++) {
+		for (int j = 0; j < ww; j++) {
+			int cY = i * NODE_HEIGHT,
+				cX = j * NODE_WIDTH;
+			// skip too far away patches
+			if (abs(cX + NODE_WIDTH - midX) * 2 / p.width > RANGE_THRESH || abs(cY + NODE_HEIGHT - midY) * 2 / p.height > RANGE_THRESH)
 				continue;
 			if (img.rows - cY < PATCH_HEIGHT || img.cols - cX < PATCH_WIDTH)
 				continue;
@@ -110,12 +100,35 @@ vector<patch> genPatches(Mat &img, patch p) {
 	return res;
 }
 
+vector<Patch> createPatches(Mat mask) {
+	vector<Point> targetPixels;
+	findNonZero(mask, targetPixels);
+	Rect targetRegion = boundingRect(targetPixels);
+	Point2i topLeft = targetRegion.tl();
+	Point2i bottomRight = targetRegion.br();
+	vector<Patch> patchList;
+	int patchStartX = (topLeft.x - PATCH_WIDTH) / NODE_WIDTH * NODE_WIDTH;
+	int patchStartY = (topLeft.y - PATCH_HEIGHT) / NODE_HEIGHT * NODE_HEIGHT;
+	int patchEndX = (bottomRight.x + PATCH_WIDTH) / NODE_WIDTH * NODE_WIDTH ;
+	int patchEndY = bottomRight.y + PATCH_HEIGHT / NODE_HEIGHT * NODE_HEIGHT;
+	cout << "Start X: " << patchStartX << " Start Y: " << patchStartY <<  endl;
+	cout << "End X: " << patchEndX << " End Y: " << patchEndY << endl;
+	for(int i = patchStartX; i <= patchEndX; i += PATCH_WIDTH)
+		for (int j = patchStartY; j <= patchEndY; j += PATCH_HEIGHT) {
+			Patch cur(i, j, NODE_WIDTH, NODE_HEIGHT);
+			patchList.push_back(cur);
+		}
+	cout << "Number of patches: " <<  patchList.size() << endl;
+	patchList.push_back(Patch(patchStartX, patchStartY, patchEndX - patchStartX, patchEndY - patchStartY));
+	return patchList;
+}
+
 /*
  * for simplicity, we only implement two kinds of relative position,
  * since DOWN_UP could be transformed to UP_DOWN
  * and RIGHT_LEFT could be transformed to LEFT_RIGHT
  */
-float calculateSSD(Mat &img, patch &p1, patch &p2, EPOS pos) {
+float calculateSSD(Mat &img, Patch &p1, Patch &p2, EPOS pos) {
 	float res = 0;
 	int ww, hh;
 	switch (pos) {
@@ -158,9 +171,9 @@ float calculateSSD(Mat &img, patch &p1, patch &p2, EPOS pos) {
  * to calculate the whole SSD table
  * SSD means the Sum of Squared Difference
  */
-vector<vector<vector<float> > > calculateSSDTable(Mat &img, vector<patch> &patchList) {
+vector<vector<vector<float> > > calculateSSDTable(Mat &img, vector<Patch> &patchList) {
 	vector<vector<vector<float> > > res;
-	int len = patchList.size();
+	size_t len = patchList.size();
 	res.resize(len);
 	for (int i = 0; i < len; i++) {
 		res[i].resize(len);
@@ -228,10 +241,10 @@ public:
  * to initialize the node table
  * include message and edge cost
  */
-void initNodeTable(Mat &img, vector<vector<node> > &nodeTable, patch &p, vector<patch> &patchList) {
-	int hh = p.height / NODE_HEIGHT + 1,
-		ww = p.width / NODE_WIDTH + 1,
-		len = patchList.size();
+void initNodeTable(Mat &img, vector<vector<node> > &nodeTable, Patch &target, vector<Patch> &patchList) {
+	int hh = target.height / NODE_HEIGHT + 1,
+		ww = target.width / NODE_WIDTH + 1;
+	size_t len = patchList.size();
 	nodeTable.resize(hh);
 	cout << "hh=" << hh << " ww=" << ww << endl;
 	for (int i = 0; i < hh; i++) {
@@ -240,18 +253,16 @@ void initNodeTable(Mat &img, vector<vector<node> > &nodeTable, patch &p, vector<
 			nodeTable[i][j].msg.resize(DIR_COUNT);
 			for (int k = 0; k < DIR_COUNT; k++) {
 				nodeTable[i][j].msg[k].resize(len);
-				for (int l = 0; l < len; l++) {
-					//nodeTable[i][j].msg[k][l] = -1;
+				for (int l = 0; l < len; l++)
 					nodeTable[i][j].msg[k][l] = FULL_MSG;
-				}
 			}
 			nodeTable[i][j].label = -1;
-			nodeTable[i][j].x = p.x + j * NODE_WIDTH;
-			nodeTable[i][j].y = p.y + i * NODE_HEIGHT;
+			nodeTable[i][j].x = target.x + j * NODE_WIDTH;
+			nodeTable[i][j].y = target.y + i * NODE_HEIGHT;
 			nodeTable[i][j].edge_cost.resize(len);
 			for (int k = 0; k < len; k++) {
 				float val = 0;
-				patch curPatch(0, 0, PATCH_WIDTH, PATCH_HEIGHT);
+				Patch curPatch(0, 0, PATCH_WIDTH, PATCH_HEIGHT);
 				/*
 				 * only the node on the edge need to calculate the SSD
 				 */
@@ -292,15 +303,14 @@ void initNodeTable(Mat &img, vector<vector<node> > &nodeTable, patch &p, vector<
  * this function is iteration for the belief propagation
  */
 void propagateMsg(vector<vector<node> > &nodeTable, vector<vector<vector<float> > > &ssdTable) {
-	int hh = nodeTable.size(),
+	size_t hh = nodeTable.size(),
 		ww = nodeTable[0].size(),
 		len = ssdTable.size();
 	for (int i = 0; i < hh; i++) {
 		for (int j = 0; j < ww; j++) {
 			for (int k = 0; k < len; k++) {
-				float aroundMsg = 0, msgCount, matchFactor;
-				float msgFactor = 0.6;				// how important is messages from the adjacent node
-				matchFactor = 1.2;				// how important is the SSD between the adjacent patches
+				float aroundMsg = 0, msgCount, matchFactor=1.2f;
+				float msgFactor = 0.6f;				// how important is messages from the adjacent node
 				msgCount = msgFactor * 3 + matchFactor;
 				if (i != 0)
 					aroundMsg += nodeTable[i - 1][j].msg[DIR_DOWN][k];
@@ -391,11 +401,11 @@ void propagateMsg(vector<vector<node> > &nodeTable, vector<vector<vector<float> 
  *find the best match patch for each node
  */
 void selectPatch(vector<vector<node> > &nodeTable) {
-	int hh = nodeTable.size(),
+	size_t hh = nodeTable.size(),
 		ww = nodeTable[0].size();
 	for (int i = 0; i < hh; i++) {
 		for (int j = 0; j < ww; j++) {
-			int len = nodeTable[i][j].edge_cost.size();
+			size_t len = nodeTable[i][j].edge_cost.size();
 			float maxB = 0;
 			int maxIdx = -1;
 			for (int k = 0; k < len; k++) {
@@ -425,7 +435,7 @@ void selectPatch(vector<vector<node> > &nodeTable) {
 /*
  * paste the patch to the corresponding node
  */
-void pastePatch(Mat &img, node &n, patch &p) {
+void pastePatch(Mat &img, node &n, Patch &p) {
 	int xx = n.x - NODE_WIDTH,
 		yy = n.y - NODE_HEIGHT;
 	for (int i = 0; i < p.height; i++) {
@@ -438,8 +448,8 @@ void pastePatch(Mat &img, node &n, patch &p) {
 /*
  * loop to fill all the target region
  */
-void fillPatch(Mat &img, vector<vector<node> > &nodeTable, vector<patch> &patchList) {
-	int hh = nodeTable.size(),
+void fillPatch(Mat &img, vector<vector<node> > &nodeTable, vector<Patch> &patchList) {
+	size_t hh = nodeTable.size(),
 		ww = nodeTable[0].size();
 	for (int i = 0; i < hh; i++) {
 		for (int j = 0; j < ww; j++) {
@@ -461,10 +471,6 @@ void fillPatch(Mat &img, vector<vector<node> > &nodeTable, vector<patch> &patchL
  * usage: ./inpainting sourceImage x y w h destinationImage iterationTime
  *
  *	sourceImage -> the input image
- *	x  -> the left top of the target region
- *	y  -> the right bottom of the target region
- *	w  -> the width of the target region
- *	h  -> the height of the target reion
  *	destinationImage -> the output image
  *	iterationTime -> the times for iteration
  */
@@ -486,7 +492,7 @@ int main(int argc, char **argv) {
 	}
 	cout << "Image Size is: W= " << img.cols << " H = " << img.rows << endl;
 	namedWindow("Draw Mask", WINDOW_FREERATIO);
-	Mat mask = 255 * Mat::ones(img.size(), CV_8UC1);
+	Mat mask = Mat::zeros(img.size(), CV_8UC1);
 	setMouseCallback("Draw Mask", drawMask,(void*) &mask);
 	//waitKey(0);
 	int key;
@@ -499,25 +505,24 @@ int main(int argc, char **argv) {
 			break;
 		}
 	}
+	destroyAllWindows();
 
-	//patch missing = roundUpArea(patch(maskX, maskY, maskW, maskH));
-	//cout << "x=" << missing.x << " y=" << missing.y << " width=" << missing.width << " height=" << missing.height << endl;
-	//vector<patch> patchList = genPatches(img, missing);
-	//cout << "Patch Size: " << patchList.size() << endl;
-	//vector<vector<vector<float> > > ssdTable = calculateSSDTable(img, patchList);
+	vector<Patch> patchList = createPatches(mask);
+	vector<vector<vector<float> > > ssdTable = calculateSSDTable(img, patchList);
+	vector<vector<node>> nodeTable;
+	Patch targetArea = patchList.back();
+	patchList.pop_back();
+	initNodeTable(img, nodeTable, targetArea, patchList);
+	for (int i = 0; i < iterTime; i++) {
+		propagateMsg(nodeTable, ssdTable);
+		cout << "ITERATION " << i << endl;
+	}
+	selectPatch(nodeTable);
+	fillPatch(img, nodeTable, patchList);
 
-	//vector<vector<node> > nodeTable;
-	//initNodeTable(img, nodeTable, missing, patchList);
-
-	////fillPatch(img, nodeTable);
-	//for (int i = 0; i < iterTime; i++) {
-	//	propagateMsg(nodeTable, ssdTable);
-	//	cout << "ITERATION " << i << endl;
-	//}
-	//selectPatch(nodeTable);
-	//fillPatch(img, nodeTable, patchList);
-
-	//// write the filled image to the destination image
-	//imwrite(output, img);
+	namedWindow("Output", WINDOW_FREERATIO);
+	imshow("Output", img);
+	imwrite(output, img);
+	waitKey(0);
 	return 0;
 }
