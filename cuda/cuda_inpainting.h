@@ -50,25 +50,9 @@ public:
 	// the parameters to be used when doing the inpainting job
 	static const int RADIUS;
 	static const float RANGE_RATIO;
-
-	static const int PATCH_WIDTH;
-	static const int PATCH_HEIGHT;
-	static const int NODE_WIDTH;
-	static const int NODE_HEIGHT;
-	static const float CONST_FULL_MSG;
-
-
-	// this class represent the patch to be extract from the input image
-	class Patch {
-	public:
-		int x;		// the x coordinate of the left top of this patch
-		int y;		// the y coordiante of the right bottom of this patch
-		int width;	// the width of this patch
-		int height;	// the height of this patch
-		Patch() : x(0), y(0), width(0), height(0) {}
-		Patch(int ww, int hh);
-		Patch(int xx, int yy, int ww, int hh) : x(xx), y(yy), width(ww), height(hh) {}
-	};
+	static const int PATCH_SIZE;
+	static const int NODE_SIZE;
+	static const float FULL_MSG;
 
 	// the node class used in the nodetable
 	class Node {
