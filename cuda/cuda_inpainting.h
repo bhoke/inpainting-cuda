@@ -11,6 +11,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include "Patch.h"
 
 
 
@@ -71,10 +72,10 @@ private:
 	// member function
 	
 	// round up the mask region to make edge larger
-	Patch RoundUpArea(Patch p);
+	// Patch RoundUpArea(Patch p);
 
 	// to judge if two patches have overlap region
-	bool OverlapPatch(Patch &p1, Patch &p2);
+	bool hasOverlap(Patch &p1, Patch &p2);
 
 	// generate the candidate patches list
 	void GenPatches();

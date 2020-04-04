@@ -11,6 +11,7 @@ public:
 	int width;
 	int height;
 	Patch();
+	Patch(int ww, int hh);
 	Patch(int xx, int yy, int ww, int hh);
     bool hasOverlap(Patch &p);
     void round();

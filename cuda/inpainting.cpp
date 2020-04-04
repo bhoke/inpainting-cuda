@@ -15,20 +15,12 @@ using namespace cv;
 #define RADIUS	(16)
 #define RANGE_RATIO	(2.0f)
 
-const int PATCH_WIDTH = RADIUS;
-const int PATCH_HEIGHT = RADIUS;
-const int NODE_WIDTH = PATCH_WIDTH / 2;
-const int NODE_HEIGHT = PATCH_HEIGHT / 2;
-
-const float CONST_FULL_MSG = PATCH_HEIGHT * PATCH_WIDTH * 255 * 255 * 3 / 2;
-float FULL_MSG = 0;
-
-
 int main(int argc, char **argv) {
 	if(argc != 8) {
 		cout<<"Usage: "<<argv[0]<<" input x y w h output iter_time"<<endl;
 		return 0;
 	}
+	auto start = std::chrono::system_clock::now();
 	// construct a CudaInpainting class preparing for the coming inpainting parameters
 	CudaInpainting ci(argv[1]);
 
@@ -43,7 +35,13 @@ int main(int argc, char **argv) {
 	cout << "Begin to Inpainting" << endl;
 
 	// invoke the inpainting function 
+	
 	ci.Inpainting(maskX, maskY, maskW, maskH, iterTime);
+	auto end = std::chrono::system_clock::now();
+
+	std::chrono::duration<double> elapsed_seconds = end - start;
+	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_seconds).count();
+	cout << "Execution Time(GPU): " << millis << " milliseconds" << endl;
 	cout << "Begin to write the image" << endl;
 
 	// write the output image to the output file

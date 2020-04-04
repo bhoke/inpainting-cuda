@@ -6,6 +6,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <chrono>
 
 using namespace std;
 using namespace cv;
@@ -42,9 +43,6 @@ vector<Patch> createPatches(Mat mask)
 	dilationKernel = Mat::ones(PATCH_HEIGHT * 2, PATCH_WIDTH * 2, CV_8U);
 	dilate(mask, dilatedMask, dilationKernel);
 	Mat patchRegion = dilatedMask - mask;
-	namedWindow("patch", WINDOW_FREERATIO);
-	imshow("patch", patchRegion);
-	waitKey(0);
 
 	findNonZero(patchRegion, targetPixels);
 	vector<Patch> patchList;
@@ -205,14 +203,29 @@ void initNodeTable(Mat &img, Mat mask, vector<vector<node>> &nodeTable, vector<P
 		ind = 0,
 		ind2 = 0;
 
-	Point first = targetPixels.front() / NODE_WIDTH * NODE_WIDTH;
-	Point last = targetPixels.back() / NODE_HEIGHT * NODE_HEIGHT;
-	Point frame = last - first;
-	int ww = frame.x / NODE_WIDTH + 1;
-	int hh = frame.y / NODE_HEIGHT + 1;
+	// Point first = targetPixels.front() / NODE_WIDTH * NODE_WIDTH;
+	// Point last = targetPixels.back() / NODE_HEIGHT * NODE_HEIGHT;
+	// Point frame = last - first;
+
+	int minX = INT32_MAX, minY = INT32_MAX, maxX = 0, maxY = 0;
+	for (auto it = targetPixels.begin(); it < targetPixels.end(); it++)
+	{
+		int curX = it->x;
+		int curY = it->y;
+		curX = curX / NODE_WIDTH * NODE_WIDTH;
+		curY = curY / NODE_HEIGHT * NODE_HEIGHT;
+		minX = (curX < minX) ? curX : minX;
+		maxX = (curX > maxX) ? curX : maxX;
+		minY = (curY < minY) ? curY : minY;
+		maxY = (curY > maxY) ? curY : maxY;
+	}
+
+	int ww = (maxX - minX) / NODE_WIDTH + 1;
+	int hh = (maxY - minY) / NODE_HEIGHT + 1;
+
+	cout << "Node Count: " << ww * hh << endl;
 
 	size_t len = patchList.size();
-	cout << "patch" << len << endl;
 	nodeTable.resize(hh);
 	//cout << "hh=" << hh << " ww=" << ww << endl;
 	for (int i = 0; i < hh; i++)
@@ -228,8 +241,8 @@ void initNodeTable(Mat &img, Mat mask, vector<vector<node>> &nodeTable, vector<P
 					nodeTable[i][j].msg[k][l] = FULL_MSG;
 			}
 			nodeTable[i][j].label = -1;
-			nodeTable[i][j].x = first.x + j * NODE_WIDTH;
-			nodeTable[i][j].y = first.y + i * NODE_HEIGHT;
+			nodeTable[i][j].x = minX + j * NODE_WIDTH;
+			nodeTable[i][j].y = minY + i * NODE_HEIGHT;
 			nodeTable[i][j].edge_cost.resize(len);
 			for (size_t k = 0; k < len; k++)
 			{
@@ -434,7 +447,7 @@ void selectPatch(vector<vector<node>> &nodeTable)
 				if (j + 1 < ww)
 					if (nodeTable[i][j + 1].msg[DIR_LEFT][k] > 0)
 						bl -= nodeTable[i][j + 1].msg[DIR_LEFT][k];
-				
+
 				if (bl > maxB || maxIdx < 0)
 				{
 					maxB = bl;
@@ -495,7 +508,6 @@ int main(int argc, const char *argv[])
 {
 	// char *input, *output;
 	int iterTime;
-
 	const char *default_args[] = {argv[0], "../topkapi.jpg", "../topkapi_inp.png", "100"};
 
 	if (argc == 1)
@@ -547,6 +559,7 @@ int main(int argc, const char *argv[])
 		}
 	}
 	destroyAllWindows();
+	auto start = std::chrono::system_clock::now();
 	Mat mask = imgCopy - img;
 	cvtColor(mask, mask, COLOR_BGR2GRAY);
 	vector<Patch> patchList = createPatches(mask);
@@ -565,6 +578,11 @@ int main(int argc, const char *argv[])
 	namedWindow("Output", WINDOW_FREERATIO);
 	imshow("Output", imgCopy);
 	imwrite(output, imgCopy);
+	auto end = std::chrono::system_clock::now();
+
+	std::chrono::duration<double> elapsed_seconds = end - start;
+	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_seconds).count();
+	cout << "Execution Time(CPU): " << millis << " milliseconds" << endl;
 	waitKey(0);
 	return 0;
 }

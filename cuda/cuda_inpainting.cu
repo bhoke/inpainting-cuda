@@ -11,14 +11,12 @@ const float CudaInpainting::RANGE_RATIO = 2.0f;
 const int CudaInpainting::NODE_SIZE = 8;
 const int CudaInpainting::PATCH_SIZE = NODE_SIZE * 2;
 
-const int CudaInpainting::NODE_SIZE = CudaInpainting::PATCH_SIZE / 2;
-const float CudaInpainting::FULL_MSG = CudaInpainting::PATCH_SIZE * 
-			CudaInpainting::PATCH_SIZE * 255 * 255 * 3 / 2.0f;
+const float CudaInpainting::FULL_MSG = CudaInpainting::PATCH_SIZE * CudaInpainting::PATCH_SIZE * 255 * 255 * 3 / 2.0f;
 
 // take one arguement as the input image file
 CudaInpainting::CudaInpainting(const char *path) {
 	initFlag = false;
-	image = imread(path, CV_LOAD_IMAGE_COLOR);
+	image = imread(path, IMREAD_COLOR);
 	imageData = nullptr;
 	if(!image.data) {
 		cout << "Image loading failed" << endl;
@@ -103,7 +101,8 @@ __global__ void deviceCopyMem(float *src, float *dst, int elem) {
 bool CudaInpainting::Inpainting(int x,int y, int width, int height, int iterTime) {
 	Patch patch(x, y, width, height);
 	// first generate the rounded up patch
-	maskPatch = RoundUpArea(patch);
+	patch.round();
+	maskPatch = patch;
 
 	// generate the candidate patches list
 	GenPatches();
@@ -157,15 +156,15 @@ Mat CudaInpainting::GetImage() {
 	return image;
 }
 
-// private functions
-CudaInpainting::Patch CudaInpainting::RoundUpArea(Patch p) {
-	Patch res;
-	res.x = (p.x / NODE_SIZE) * NODE_SIZE;
-	res.y = (p.y / NODE_SIZE) * NODE_SIZE;
-	res.width = (p.x + p.width +NODE_SIZE - 1) / NODE_SIZE * NODE_SIZE - res.x;
-	res.height = (p.y + p.height + NODE_SIZE - 1) / NODE_SIZE * NODE_SIZE - res.y;
-	return res;
-}
+// // private functions
+//  Patch round(Patch p) {
+// 	Patch res;
+// 	res.x = (p.x / NODE_SIZE) * NODE_SIZE;
+// 	res.y = (p.y / NODE_SIZE) * NODE_SIZE;
+// 	res.width = (p.x + p.width +NODE_SIZE - 1) / NODE_SIZE * NODE_SIZE - res.x;
+// 	res.height = (p.y + p.height + NODE_SIZE - 1) / NODE_SIZE * NODE_SIZE - res.y;
+// 	return res;
+// }
 
 
 // to judge if two given patches have overlap region
@@ -233,7 +232,7 @@ __device__ inline int getEdgeCostIdx(int x, int y, int l, int ww, int hh, int le
 }
 
 // calculate the SSD table on GPU
-__global__ void deviceCalculateSSDTable(float *dImg, int ww, int hh, CudaInpainting::Patch *pl, CudaInpainting::SSDEntry *dSSDTable) {
+__global__ void deviceCalculateSSDTable(float *dImg, int ww, int hh, Patch *pl, CudaInpainting::SSDEntry *dSSDTable) {
 	int len = gridDim.x;
 	const int patchSize = CudaInpainting::PATCH_SIZE * CudaInpainting::PATCH_SIZE;	
 	__shared__ float pixels[CudaInpainting::PATCH_SIZE][CudaInpainting::PATCH_SIZE][3];
@@ -340,7 +339,7 @@ void CudaInpainting::CalculateSSDTable() {
 	}
 }
 
-__device__ float deviceCalculateSSD(float *dImg, int w, int h, CudaInpainting::Patch p1, CudaInpainting::Patch p2, CudaInpainting::EPOS pos) {
+__device__ float deviceCalculateSSD(float *dImg, int w, int h, Patch p1, Patch p2, CudaInpainting::EPOS pos) {
 	float res = 0;
 	int ww, hh;
 	int p1x, p1y, p2x, p2y;
@@ -406,20 +405,20 @@ __device__ float deviceCalculateSSD(float *dImg, int w, int h, CudaInpainting::P
 }
 
 // initialize the coordinates of node in table
-__global__ void deviceInitFirst(CudaInpainting::Node* dNodeTable, CudaInpainting::Patch p) {
+__global__ void deviceInitFirst(CudaInpainting::Node* dNodeTable, Patch p) {
 	int ww = gridDim.x;
 	dNodeTable[ww * threadIdx.x + blockIdx.x].x = p.x + blockIdx.x * CudaInpainting::NODE_SIZE;
 	dNodeTable[ww * threadIdx.x + blockIdx.x].y = p.y + threadIdx.x * CudaInpainting::NODE_SIZE;
 }
 
 // the constructor of patch on GPU
-__device__ CudaInpainting::Patch::Patch(int ww, int hh) {
+__device__ Patch::Patch(int ww, int hh) {
 	width = ww;
 	height = hh;
 }
 
 // the initialize node table on GPU
-__global__ void deviceInitNodeTable(float *dImg, int w, int h, CudaInpainting::Patch p, CudaInpainting::Node* dNodeTable, float *dMsgTable, float *dEdgeCostTable, CudaInpainting::Patch *dPatchList, int len) {
+__global__ void deviceInitNodeTable(float *dImg, int w, int h, Patch p, CudaInpainting::Node* dNodeTable, float *dMsgTable, float *dEdgeCostTable, Patch *dPatchList, int len) {
 	int hh = gridDim.y, ww = gridDim.x;
 
 	for(int i = threadIdx.x; i < len; i += blockDim.x * blockDim.y) {
@@ -431,7 +430,7 @@ __global__ void deviceInitNodeTable(float *dImg, int w, int h, CudaInpainting::P
 
 		// initialize the edge cost 
 		float val = 0;
-		CudaInpainting::Patch curPatch(CudaInpainting::PATCH_SIZE, CudaInpainting::PATCH_SIZE);
+		Patch curPatch(CudaInpainting::PATCH_SIZE, CudaInpainting::PATCH_SIZE);
 		
 		// to judge if the current node is on the edge of the node table
 		if(((blockIdx.y == 0 || blockIdx.y == hh - 1) && (/*blockIdx.x >= 0 && */blockIdx.x <= ww - 1 )) ||
@@ -503,7 +502,7 @@ void CudaInpainting::InitNodeTable() {
 }
 
 // the iteration function which will be run on GPU
-__global__ void deviceIteration(CudaInpainting::SSDEntry *dSSDTable, float *dEdgeCostTable, CudaInpainting::Patch *dPatchList, int len, float *dMsgTable, float *dFillMsgTable, int times) {
+__global__ void deviceIteration(CudaInpainting::SSDEntry *dSSDTable, float *dEdgeCostTable, Patch *dPatchList, int len, float *dMsgTable, float *dFillMsgTable, int times) {
 	int hh = gridDim.y, ww = gridDim.x, i = blockIdx.y, j = blockIdx.x;
 	float aroundMsg, msgCount, matchFactor;
 	float msgFactor = 0.8f;
@@ -624,7 +623,6 @@ __global__ void deviceIteration(CudaInpainting::SSDEntry *dSSDTable, float *dEdg
 // the wrap function for iteration in Belief Propagation
 void CudaInpainting::RunIteration(int times) {
 	if(deviceMsgTable && deviceFillMsgTable && deviceSSDTable && deviceEdgeCostTable) {
-		cout << "Run Iteration" << endl;
 		int lim = 1024;
 		if(patchListSize < lim) {
 			lim = patchListSize;
@@ -716,6 +714,3 @@ void CudaInpainting::FillPatch() {
 		}
 	}
 }
-
-
-
