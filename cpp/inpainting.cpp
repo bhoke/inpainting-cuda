@@ -249,15 +249,15 @@ void initNodeTable(Mat &img, Mat mask, vector<vector<node>> &nodeTable, vector<P
 				float val = 0;
 				Patch curPatch(0, 0, PATCH_WIDTH, PATCH_HEIGHT);
 				// only the node on the edge need to calculate the SSD
-				if ((i == 0 || i == hh - 1) || (j == 0 || j == ww - 1))
-				{
+// 				if ((i == 0 || i == hh - 1) || (j == 0 || j == ww - 1))
+// 				{
 					if (j == 0)
 					{
 						curPatch.x = nodeTable[i][j].x - PATCH_WIDTH;
 						curPatch.y = nodeTable[i][j].y - NODE_HEIGHT;
 						val += calculateSSD(img, curPatch, patchList[k], LEFT_RIGHT);
 					}
-					else
+					else if (j == ww - 1)
 					{
 						curPatch.x = nodeTable[i][j].x;
 						curPatch.y = nodeTable[i][j].y - NODE_HEIGHT;
@@ -269,13 +269,13 @@ void initNodeTable(Mat &img, Mat mask, vector<vector<node>> &nodeTable, vector<P
 						curPatch.y = nodeTable[i][j].y - PATCH_HEIGHT;
 						val += calculateSSD(img, curPatch, patchList[k], UP_DOWN);
 					}
-					else
+					else (i == hh - 1)
 					{
 						curPatch.x = nodeTable[i][j].x - NODE_WIDTH;
 						curPatch.y = nodeTable[i][j].y;
 						val += calculateSSD(img, patchList[k], curPatch, UP_DOWN);
 					}
-				}
+// 				}
 				nodeTable[i][j].edge_cost[k] = val;
 				if (val < 1)
 					nodeTable[i][j].edge_cost[k] = FULL_MSG;
