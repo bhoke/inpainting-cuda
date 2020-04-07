@@ -292,6 +292,7 @@ void initNodeTable(Mat &img, Mat mask, vector<vector<node>> &nodeTable, vector<P
  */
 void propagateMsg(vector<vector<node>> &nodeTable, vector<vector<vector<int>>> &ssdTable)
 {
+	///TODO:Reconsider if statements
 	size_t hh = nodeTable.size(),
 		   len = ssdTable.size();
 	for (size_t i = 0; i < hh; i++)
